@@ -1,0 +1,91 @@
+rm(list = ls())
+gc()
+
+setwd("C:/Users/Zane Kelly/Data/fb interview practice/abb zil/")
+library(dplyr)
+library(ggplot2)
+theme_set(new = theme_bw(base_size = 13))
+
+prop <- read.csv("data/properties_2016.csv")
+train <- read.csv("data/train_2016.csv")
+dict <- readxl::read_excel("data/zillow_data_dictionary.xlsx")
+
+
+# rename vars
+# paste0(gsub("'", "", dict$Feature), collapse = "','")
+
+# tabulate missing data, select and rename columns
+i <- apply(prop, 2, function(x) sum(is.na(x)) / nrow(prop))
+dat <- prop[,i<.75]    # arbitrary choice
+names(dat)
+
+# re-check this list w/ new threshold
+dat <- dat %>% rename(type.ac = airconditioningtypeid,
+                      n.baths = bathroomcnt,
+                      n.beds = bedroomcnt,
+                      build.qual = buildingqualitytypeid,
+                      n.baths.calc = calculatedbathnbr,
+                      sqft.tot.fin = calculatedfinishedsquarefeet,
+                      sqft.living.fin = finishedsquarefeet12,
+                      n.baths.full = fullbathcnt,
+                      n.car.garage = garagecarcnt,
+                      sqft.garage = garagetotalsqft,
+                      d.hottub = hashottuborspa,
+                      type.heating = heatingorsystemtypeid,
+                      sqft.lot = lotsizesquarefeet,
+                      zoning.county = propertycountylandusecode,
+                      use.code = propertylandusetypeid,
+                      zoning.allowed = propertyzoningdesc,
+                      reg.fips = fips,
+                      reg.census.raw = rawcensustractandblock,
+                      reg.census = censustractandblock,
+                      reg.city = regionidcity,
+                      reg.county = regionidcounty,
+                      reg.zip5 = regionidzip,
+                      reg.hood = regionidneighborhood,
+                      n.rooms = roomcnt,
+                      n.units = unitcnt,
+                      built.yr = yearbuilt,
+                      d.fireplace = fireplaceflag,
+                      tax.val.imp = structuretaxvaluedollarcnt,
+                      tax.val.land = landtaxvaluedollarcnt,
+                      tax.val.tot = taxvaluedollarcnt,
+                      tax.amt = taxamount,
+                      tax.yr = assessmentyear,
+                      arrears = taxdelinquencyflag)
+
+dat$y <- dat$latitude / 10e6
+dat$x <- dat$longitude / 10e6
+
+dat <- dat %>% mutate(arrears = ifelse(arrears == "Y", 1, 0),
+                      d.fireplace = ifelse(d.fireplace == "Y", 1, 0),
+                      d.hottub = ifelse(d.hottub == "Y", 1, 0))
+
+train$yrmo <- format(as.Date(train$transactiondate), "%m-%Y")
+
+
+# Some preliminary plots --------------------------------------------------
+# qplot(dat$x, dat$y)         # slow, for obvious reasons
+
+# Plot of error from training data
+# logerror looks rather laplacian, so truncate the x axis
+ggplot(data = train, aes(x = logerror)) +
+    geom_histogram(bins = 800) +
+    xlim(c(-.75, .75))
+# try, out of curiousity, absolute error
+ggplot(data = train, aes(x = abs(logerror))) + geom_density(fill = "lightblue")
+
+# Is there, perhaps, a spatial pattern to where zillow gets it wrong? (a priori, I doubt it)
+
+# decomposing into sub-elements:
+# 1) There are 'house' effects - the intangibles of a particular property (well not really intangible but obviously not captured here)
+# 2) neighborhood effects - the zips aren't very well balanced but we can live with that
+#     There are also census block and tracts for neighborhoods
+
+# Speculating some base elements of the error level:
+    # the baseline price (perhaps locally constrained) for a house
+    # house-specific effects - most of the property records (hottubs, etc.)
+        # further - area or neighborhood effects that aren't captured by this data and
+        # we can't get at in phase 1 (perhaps census block or zip is an instrument for this, albeit a poor signal)
+    # buyer specific effects - these we probably can't get at, not with this data
+    #
